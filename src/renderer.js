@@ -1,4 +1,5 @@
-const { ipcRenderer } = require('electron');
+// Using the secure electronAPI exposed via preload script
+const { electronAPI } = window;
 
 // DOM Elements
 const sprite = document.getElementById('mizuki-sprite');
@@ -69,11 +70,11 @@ function startWalkAnimation() {
 async function startWalking() {
   if (walkInterval) clearInterval(walkInterval);
   
-  const screenBounds = await ipcRenderer.invoke('get-screen-bounds');
+  const screenBounds = await electronAPI.getScreenBounds();
   
   walkInterval = setInterval(async () => {
     if (!isPaused && isWalking && !isDragging && !isDancing) {
-      const pos = await ipcRenderer.invoke('get-window-position');
+      const pos = await electronAPI.getWindowPosition();
       let newX = pos.x + (walkDirection * walkSpeed);
       
       // Check boundaries and reverse direction if needed
@@ -87,7 +88,7 @@ async function startWalking() {
         newX = screenBounds.width - 200;
       }
       
-      ipcRenderer.send('set-window-position', { x: newX, y: pos.y });
+      electronAPI.setWindowPosition(newX, pos.y);
     }
   }, 50); // Update position every 50ms
 }
@@ -180,7 +181,7 @@ function setupEventListeners() {
       // Only start dragging if moved more than 5 pixels
       if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
         isDragging = true;
-        ipcRenderer.send('move-window', { deltaX, deltaY });
+        electronAPI.moveWindow(deltaX, deltaY);
         dragStartX = e.screenX;
         dragStartY = e.screenY;
       }
@@ -235,7 +236,7 @@ function showContextMenu(x, y) {
     { label: '💃 Dance', action: () => startDancing() },
     { label: isPaused ? '▶️ Resume' : '⏸️ Pause', action: () => isPaused ? resume() : pause() },
     { label: isBubbleHidden ? '💬 Show Bubble' : '🔇 Hide Bubble', action: () => isBubbleHidden ? showBubble() : hideBubble() },
-    { label: '❌ Quit', action: () => ipcRenderer.send('quit-app') }
+    { label: '❌ Quit', action: () => electronAPI.quitApp() }
   ];
   
   menuItems.forEach(item => {

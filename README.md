@@ -57,6 +57,7 @@ Edit the `messages` array in `src/renderer.js` to customize what Mizuki says.
 ```
 ├── src/
 │   ├── main.js        # Electron main process
+│   ├── preload.js     # Preload script for secure IPC
 │   ├── index.html     # Main HTML file
 │   ├── styles.css     # Styling
 │   └── renderer.js    # Renderer process (animations, interactions)
