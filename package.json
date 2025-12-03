@@ -1,0 +1,22 @@
+{
+  "name": "mizuki-sprite-desktop-companion",
+  "version": "1.0.0",
+  "description": "A playful Electron desktop app where Mizuki (your anime AI persona) walks around the screen, dances when clicked, and shows random speech bubbles with short messages. It uses a transparent, frameless window that floats above your desktop.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "electron",
+    "desktop-companion",
+    "anime",
+    "sprite",
+    "mizuki"
+  ],
+  "author": "bloodbathwest-source",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^39.2.4"
+  }
+}
