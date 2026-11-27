@@ -1,5 +1,10 @@
-// Using the secure electronAPI exposed via preload script
-const { electronAPI } = window;
+// Using the secure API exposed via preload script.
+// NOTE: it must not be redeclared as `const { electronAPI } = window` —
+// contextBridge installs the exposed name in the global lexical scope,
+// so a top-level declaration of the same name throws
+// "SyntaxError: Identifier 'electronAPI' has already been declared"
+// and the whole renderer fails to run.
+const api = window.electronAPI;
 
 // DOM Elements
 const sprite = document.getElementById('mizuki-sprite');
@@ -70,11 +75,11 @@ function startWalkAnimation() {
 async function startWalking() {
   if (walkInterval) clearInterval(walkInterval);
   
-  const screenBounds = await electronAPI.getScreenBounds();
+  const screenBounds = await api.getScreenBounds();
   
   walkInterval = setInterval(async () => {
     if (!isPaused && isWalking && !isDragging && !isDancing) {
-      const pos = await electronAPI.getWindowPosition();
+      const pos = await api.getWindowPosition();
       let newX = pos.x + (walkDirection * walkSpeed);
       
       // Check boundaries and reverse direction if needed
@@ -88,7 +93,7 @@ async function startWalking() {
         newX = screenBounds.width - 200;
       }
       
-      electronAPI.setWindowPosition(newX, pos.y);
+      api.setWindowPosition(newX, pos.y);
     }
   }, 50); // Update position every 50ms
 }
@@ -181,7 +186,7 @@ function setupEventListeners() {
       // Only start dragging if moved more than 5 pixels
       if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
         isDragging = true;
-        electronAPI.moveWindow(deltaX, deltaY);
+        api.moveWindow(deltaX, deltaY);
         dragStartX = e.screenX;
         dragStartY = e.screenY;
       }
@@ -236,7 +241,7 @@ function showContextMenu(x, y) {
     { label: '💃 Dance', action: () => startDancing() },
     { label: isPaused ? '▶️ Resume' : '⏸️ Pause', action: () => isPaused ? resume() : pause() },
     { label: isBubbleHidden ? '💬 Show Bubble' : '🔇 Hide Bubble', action: () => isBubbleHidden ? showBubble() : hideBubble() },
-    { label: '❌ Quit', action: () => electronAPI.quitApp() }
+    { label: '❌ Quit', action: () => api.quitApp() }
   ];
   
   menuItems.forEach(item => {
