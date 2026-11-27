@@ -30,6 +30,7 @@ let isWalking = true;
 let isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
+let isPointerDown = false;
 
 // Speech bubble messages
 const messages = [
@@ -47,15 +48,85 @@ const messages = [
   "Let's be friends forever~",
   "Have you smiled today?",
   "You're amazing!",
-  "Don't forget to rest~"
+  "Don't forget to rest~",
+  "I practiced a new dance move!",
+  "You look focused today!",
+  "Tiny breaks make big brains!",
+  "I believe in you!",
+  "Let's make today count!",
+  "Humming a little tune~ ♪",
+  "Did you stretch your shoulders?",
+  "One step at a time!",
+  "I saved you a smile~",
+  "Thinking of a new song...",
+  "We make a great team!",
+  "Your desktop feels like home~"
 ];
 
+// A few lines that only show up at the right time of day
+const timeOfDayMessages = {
+  morning: [
+    "Good morning! Ready for a great day?",
+    "Morning! Did you sleep well?",
+    "Rise and shine! ☀️"
+  ],
+  afternoon: [
+    "Good afternoon! Keep it up!",
+    "Afternoon stretch break?",
+    "You're on a roll today!"
+  ],
+  evening: [
+    "Good evening! Almost time to relax~",
+    "Evening! You worked hard today.",
+    "The stars will be out soon!"
+  ],
+  night: [
+    "It's late... don't stay up too long~",
+    "Night owl mode? Me too!",
+    "Sleep is important, you know!"
+  ]
+};
+
+let lastMessage = null;
+
+// Pick a line she hasn't just said: general lines plus the ones that fit
+// the current time of day, never repeating the previous line.
+function pickMessage() {
+  const hour = new Date().getHours();
+  let bucket = timeOfDayMessages.night;
+  if (hour >= 5 && hour < 12) bucket = timeOfDayMessages.morning;
+  else if (hour >= 12 && hour < 18) bucket = timeOfDayMessages.afternoon;
+  else if (hour >= 18 && hour < 23) bucket = timeOfDayMessages.evening;
+
+  const pool = messages.concat(bucket).filter((line) => line !== lastMessage);
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastMessage = pick;
+  return pick;
+}
+
+// Whether she should launch with Windows (restored from settings)
+let startWithWindows = false;
+
 // Initialize animations
-function init() {
+async function init() {
+  // Restore remembered settings (paused / bubbles / start-with-Windows).
+  // Position is restored by the main process when it creates the window.
+  try {
+    const saved = await api.getSettings();
+    if (saved) {
+      if (saved.paused) pause();
+      if (saved.bubblesHidden) hideBubble();
+      startWithWindows = !!saved.startWithWindows;
+    }
+  } catch {
+    // No saved settings yet — defaults are fine.
+  }
+
   startWalkAnimation();
   startWalking();
   scheduleSpeechBubble();
   setupEventListeners();
+  setupClickThrough();
 }
 
 // Sprite animation (walk/dance frame cycling)
@@ -77,22 +148,27 @@ async function startWalking() {
   
   const screenBounds = await api.getScreenBounds();
   
+  // Bounds span every connected display (offsetX is 0 on a single monitor,
+  // so single-screen walking behaves exactly as before).
+  const minX = screenBounds.offsetX || 0;
+  const maxX = minX + screenBounds.width - 200;
+
   walkInterval = setInterval(async () => {
     if (!isPaused && isWalking && !isDragging && !isDancing) {
       const pos = await api.getWindowPosition();
       let newX = pos.x + (walkDirection * walkSpeed);
-      
+
       // Check boundaries and reverse direction if needed
-      if (newX <= 0) {
+      if (newX <= minX) {
         walkDirection = 1;
         sprite.classList.remove('flipped');
-        newX = 0;
-      } else if (newX >= screenBounds.width - 200) {
+        newX = minX;
+      } else if (newX >= maxX) {
         walkDirection = -1;
         sprite.classList.add('flipped');
-        newX = screenBounds.width - 200;
+        newX = maxX;
       }
-      
+
       api.setWindowPosition(newX, pos.y);
     }
   }, 50); // Update position every 50ms
@@ -102,8 +178,7 @@ async function startWalking() {
 function showSpeechBubble() {
   if (isBubbleHidden) return;
   
-  const randomMessage = messages[Math.floor(Math.random() * messages.length)];
-  speechText.textContent = randomMessage;
+  speechText.textContent = pickMessage();
   speechBubble.classList.remove('hidden');
   speechBubble.classList.add('visible');
   
@@ -141,26 +216,64 @@ function stopDancing() {
   sprite.classList.remove('dancing');
 }
 
-// Pause/Resume
+// Pause/Resume (remembered between launches)
 function pause() {
   isPaused = true;
   sprite.classList.add('paused');
+  api.updateSettings({ paused: true });
 }
 
 function resume() {
   isPaused = false;
   sprite.classList.remove('paused');
+  api.updateSettings({ paused: false });
 }
 
-// Hide/Show bubble
+// Hide/Show bubble (remembered between launches)
 function hideBubble() {
   isBubbleHidden = true;
   speechBubble.classList.remove('visible');
   speechBubble.classList.add('hidden');
+  api.updateSettings({ bubblesHidden: true });
 }
 
 function showBubble() {
   isBubbleHidden = false;
+  api.updateSettings({ bubblesHidden: false });
+}
+
+// Click-through: the window ignores mouse events everywhere except on her
+// sprite, her speech bubble, and the context menu — so clicks on the
+// transparent parts of the window land on whatever is behind her. The main
+// process forwards mousemove events while ignoring, so moving the pointer
+// back over her makes her clickable again.
+let lastIgnoreState = null;
+function setWindowIgnore(ignore) {
+  if (ignore !== lastIgnoreState) {
+    lastIgnoreState = ignore;
+    api.setIgnoreMouseEvents(ignore);
+  }
+}
+
+function setupClickThrough() {
+  // Start click-through; the first mousemove over her body restores clicks.
+  setWindowIgnore(true);
+
+  document.addEventListener('mousemove', (e) => {
+    // Never go click-through mid-drag — the drag would lose the pointer.
+    if (isPointerDown) {
+      setWindowIgnore(false);
+      return;
+    }
+    const menu = document.getElementById('context-menu');
+    const target = e.target;
+    const overInteractive =
+      target === sprite ||
+      target === speechBubble ||
+      speechBubble.contains(target) ||
+      (menu && (target === menu || menu.contains(target)));
+    setWindowIgnore(!overInteractive);
+  });
 }
 
 // Event listeners
@@ -176,6 +289,7 @@ function setupEventListeners() {
   // Drag functionality
   sprite.addEventListener('mousedown', (e) => {
     isDragging = false;
+    isPointerDown = true;
     dragStartX = e.screenX;
     dragStartY = e.screenY;
     
@@ -195,7 +309,8 @@ function setupEventListeners() {
     const onMouseUp = () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      
+      isPointerDown = false;
+
       // Reset dragging after a short delay to prevent click trigger
       setTimeout(() => {
         isDragging = false;
@@ -241,6 +356,13 @@ function showContextMenu(x, y) {
     { label: '💃 Dance', action: () => startDancing() },
     { label: isPaused ? '▶️ Resume' : '⏸️ Pause', action: () => isPaused ? resume() : pause() },
     { label: isBubbleHidden ? '💬 Show Bubble' : '🔇 Hide Bubble', action: () => isBubbleHidden ? showBubble() : hideBubble() },
+    {
+      label: `${startWithWindows ? '☑' : '☐'} Start with Windows`,
+      action: () => {
+        startWithWindows = !startWithWindows;
+        api.setStartWithWindows(startWithWindows);
+      }
+    },
     { label: '❌ Quit', action: () => api.quitApp() }
   ];
   
@@ -266,18 +388,23 @@ function showContextMenu(x, y) {
   });
   
   document.body.appendChild(menu);
-  
-  // Close menu on click outside
+
+  // Close menu on click outside. With click-through enabled, clicks outside
+  // the window never reach this document, so also close on window blur and
+  // after a few seconds.
   const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
+    if (!e || !menu.contains(e.target)) {
       menu.remove();
       document.removeEventListener('click', closeMenu);
+      window.removeEventListener('blur', closeMenu);
     }
   };
-  
+
   setTimeout(() => {
     document.addEventListener('click', closeMenu);
   }, 100);
+  window.addEventListener('blur', closeMenu);
+  setTimeout(() => closeMenu(null), 10000);
 }
 
 // Start everything
